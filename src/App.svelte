@@ -5,11 +5,13 @@
 	import Projectile from './lib/Projectile.svelte';
 	import Dungeon from './lib/Dungeon.svelte';
 	import HUD from './lib/HUD.svelte';
+	import Item from './lib/Item.svelte';
 	import { generateDungeon } from './dungeonGenerator';
 	import { weapons } from './weapons';
+	import { items } from './items';
 
-	let canvasWidth = 800;
-	let canvasHeight = 600;
+	const canvasWidth = 800;
+	const canvasHeight = 600;
 
 	let gameState = {
 		player: {
@@ -19,11 +21,12 @@
 			maxHealth: 100,
 			energy: 100,
 			maxEnergy: 100,
-			weapon: weapons[2],
+			weapon: weapons[0],
 			direction: { x: 1, y: 0 }
 		},
 		enemies: [],
 		projectiles: [],
+		items: [],
 		currentRoom: 0,
 		rooms: [],
 		score: 0,
@@ -35,8 +38,8 @@
 	let lastTime = 0;
 	let animationFrame;
 
-	// Camera offset to keep player in center
-	$: cameraOffset = {
+	// Camera position (reactive)
+	$: camera = {
 		x: gameState.player.x - canvasWidth / 2,
 		y: gameState.player.y - canvasHeight / 2
 	};
@@ -62,60 +65,68 @@
 
 	function handleKeyDown(e) {
 		keys[e.key] = true;
-
-		// Switch weapons using number keys 1–3
-		if (e.key === '1') {
-			gameState.player.weapon = weapons[0];
-		} else if (e.key === '2') {
-			gameState.player.weapon = weapons[1];
-		} else if (e.key === '3') {
-			gameState.player.weapon = weapons[2];
-		}
+		if (e.key === '1') gameState.player.weapon = weapons[0];
+		if (e.key === '2') gameState.player.weapon = weapons[1];
+		if (e.key === '3') gameState.player.weapon = weapons[2];
+		if (e.key === '4') gameState.player.weapon = weapons[3];
 	}
 
 	function handleKeyUp(e) {
 		keys[e.key] = false;
-
-		
 	}
 
 	function handleShoot(e) {
 		if (gameState.gameOver || !gameState.gameStarted) return;
+		if (gameState.player.energy < gameState.player.weapon.energyCost) return;
 
 		const rect = document.querySelector('#game-canvas').getBoundingClientRect();
 		const mouseX = e.clientX - rect.left;
 		const mouseY = e.clientY - rect.top;
 
-		const worldMouseX = mouseX + cameraOffset.x;
-		const worldMouseY = mouseY + cameraOffset.y;
+		// Convert screen coordinates to world coordinates
+		const worldX = mouseX + camera.x;
+		const worldY = mouseY + camera.y;
 
-		const angle = Math.atan2(worldMouseY - gameState.player.y, worldMouseX - gameState.player.x);
+		const angle = Math.atan2(worldY - gameState.player.y, worldX - gameState.player.x);
 
 		gameState.player.direction = {
 			x: Math.cos(angle),
 			y: Math.sin(angle)
 		};
 
-		if (gameState.player.energy >= gameState.player.weapon.energyCost) {
-			gameState.player.energy -= gameState.player.weapon.energyCost;
+		gameState.player.energy -= gameState.player.weapon.energyCost;
 
-			gameState.projectiles.push({
-				x: gameState.player.x,
-				y: gameState.player.y,
-				dx: Math.cos(angle) * 10,
-				dy: Math.sin(angle) * 10,
-				damage: gameState.player.weapon.damage,
-				lifetime: 60,
-				type: 'player'
-			});
-		}
+		const weapon = gameState.player.weapon;
+		const projectileSpeed = weapon.projectileSpeed || 10;
+		
+		gameState.projectiles.push({
+			x: gameState.player.x,
+			y: gameState.player.y,
+			dx: Math.cos(angle) * projectileSpeed,
+			dy: Math.sin(angle) * projectileSpeed,
+			damage: weapon.damage,
+			lifetime: 60,
+			type: 'player',
+			color: weapon.color || '#FFFFFF', // Ensure color is defined
+			weaponType: weapon.name
+		});
+
+		console.log('Player projectile created:', {
+			position: { x: gameState.player.x, y: gameState.player.y },
+			direction: { dx: Math.cos(angle), dy: Math.sin(angle) },
+			color: weapon.color
+		});
 	}
 
 	function spawnEnemies() {
 		const room = gameState.rooms[gameState.currentRoom];
-		const count = 3 + Math.floor(Math.random() * 3);
+		const enemyCount = 3 + Math.floor(Math.random() * 3);
+		const itemCount = 1 + Math.floor(Math.random() * 2);
 
-		for (let i = 0; i < count; i++) {
+		gameState.enemies = [];
+		gameState.items = [];
+
+		for (let i = 0; i < enemyCount; i++) {
 			const x = room.x + 50 + Math.random() * (room.width - 100);
 			const y = room.y + 50 + Math.random() * (room.height - 100);
 
@@ -129,8 +140,18 @@
 				shootCooldown: 60 + Math.random() * 60
 			});
 		}
-	}
 
+		for (let i = 0; i < itemCount; i++) {
+			const x = room.x + 50 + Math.random() * (room.width - 100);
+			const y = room.y + 50 + Math.random() * (room.height - 100);
+			const itemType = Math.random() > 0.5 ? 'healthPack' : 'weaponUpgrade';
+			gameState.items.push({
+				x,
+				y,
+				...items[itemType]
+			});
+		}
+	}
 
 	function gameLoop(timestamp) {
 		const deltaTime = timestamp - lastTime;
@@ -151,8 +172,12 @@
 		if (keys['ArrowLeft'] || keys['a']) gameState.player.x -= speed;
 		if (keys['ArrowRight'] || keys['d']) gameState.player.x += speed;
 
-		gameState.player.energy = Math.min(gameState.player.energy + 0.2, gameState.player.maxEnergy);
+		gameState.player.energy = Math.min(
+			gameState.player.energy + 0.2, 
+			gameState.player.maxEnergy
+		);
 
+		// Update enemies
 		for (let i = gameState.enemies.length - 1; i >= 0; i--) {
 			const enemy = gameState.enemies[i];
 			const dx = gameState.player.x - enemy.x;
@@ -174,7 +199,8 @@
 					dy: (dy / dist) * 5,
 					damage: enemy.damage,
 					lifetime: 120,
-					type: 'enemy'
+					type: 'enemy',
+					color: '#FF0000'
 				});
 			}
 
@@ -184,6 +210,30 @@
 			}
 		}
 
+		// Update items
+		for (let i = gameState.items.length - 1; i >= 0; i--) {
+			const item = gameState.items[i];
+			const dx = gameState.player.x - item.x;
+			const dy = gameState.player.y - item.y;
+			const dist = Math.sqrt(dx * dx + dy * dy);
+
+			if (dist < 30) {
+				if (item.type === 'health') {
+					gameState.player.health = Math.min(
+						gameState.player.health + item.amount,
+						gameState.player.maxHealth
+					);
+				} else if (item.type === 'weapon') {
+					const currentIndex = weapons.indexOf(gameState.player.weapon);
+					const nextIndex = (currentIndex + 1) % weapons.length;
+					gameState.player.weapon = weapons[nextIndex];
+				}
+				gameState.items.splice(i, 1);
+				gameState.score += 50;
+			}
+		}
+
+		// Update projectiles
 		for (let i = gameState.projectiles.length - 1; i >= 0; i--) {
 			const proj = gameState.projectiles[i];
 			proj.x += proj.dx;
@@ -196,28 +246,30 @@
 			}
 
 			if (proj.type === 'player') {
+				let shouldRemove = !proj.piercing;
+				
 				for (let j = gameState.enemies.length - 1; j >= 0; j--) {
 					const enemy = gameState.enemies[j];
 					const dx = proj.x - enemy.x;
 					const dy = proj.y - enemy.y;
 					const dist = Math.sqrt(dx * dx + dy * dy);
 
-					if (dist < 20) {
+					if (proj.splashRadius > 0 && dist < proj.splashRadius) {
+						const splashDamage = proj.damage * (1 - (dist / proj.splashRadius));
+						enemy.health -= splashDamage;
+					} 
+					else if (dist < 20) {
 						enemy.health -= proj.damage;
-						gameState.projectiles.splice(i, 1);
-
-						if (enemy.health <= 0) {
-							gameState.enemies.splice(j, 1);
-							gameState.score += 100;
-							if (Math.random() < 0.3) {
-								gameState.player.energy = Math.min(
-									gameState.player.energy + 20,
-									gameState.player.maxEnergy
-								);
-							}
-						}
-						break;
 					}
+
+					if (enemy.health <= 0) {
+						gameState.enemies.splice(j, 1);
+						gameState.score += 100;
+					}
+				}
+
+				if (shouldRemove) {
+					gameState.projectiles.splice(i, 1);
 				}
 			}
 
@@ -234,6 +286,7 @@
 			}
 		}
 
+		// Room transitions
 		const currentRoom = gameState.rooms[gameState.currentRoom];
 		if (
 			gameState.player.x < currentRoom.x ||
@@ -251,7 +304,6 @@
 					gameState.player.y <= room.y + room.height
 				) {
 					gameState.currentRoom = i;
-					gameState.enemies = [];
 					spawnEnemies();
 					break;
 				}
@@ -270,8 +322,10 @@
 		gameState.currentRoom = 0;
 		gameState.enemies = [];
 		gameState.projectiles = [];
+		gameState.items = [];
 		gameState.player.x = gameState.rooms[0].center.x;
 		gameState.player.y = gameState.rooms[0].center.y;
+		gameState.player.weapon = weapons[0];
 		spawnEnemies();
 	}
 </script>
@@ -284,6 +338,7 @@
 			<div class="controls">
 				<p>WASD or Arrow Keys to move</p>
 				<p>Mouse to aim and shoot</p>
+				<p>1-4 to switch weapons</p>
 			</div>
 		</div>
 	{:else if gameState.gameOver}
@@ -294,7 +349,7 @@
 		</div>
 	{:else}
 		<div id="game-canvas">
-			<div style="position: absolute; left: {-cameraOffset.x}px; top: {-cameraOffset.y}px;">
+			<div style="position: absolute; left: {-camera.x}px; top: {-camera.y}px;">
 				<Dungeon rooms={gameState.rooms} currentRoom={gameState.currentRoom} />
 
 				<Player
@@ -303,12 +358,27 @@
 					direction={gameState.player.direction}
 				/>
 
-				{#each gameState.enemies as enemy (enemy.x + '-' + enemy.y)}
+				{#each gameState.enemies as enemy (enemy.x + enemy.y)}
 					<Enemy x={enemy.x} y={enemy.y} />
 				{/each}
 
-				{#each gameState.projectiles as proj (proj.x + '-' + proj.y)}
-					<Projectile x={proj.x} y={proj.y} dx={proj.dx} dy={proj.dy} type={proj.type} />
+				{#each gameState.projectiles as proj (proj.x + proj.y)}
+					<Projectile 
+						x={proj.x}
+						y={proj.y}
+						color={proj.color}
+						type={proj.type}
+					/>
+				{/each}
+
+				{#each gameState.items as item (item.x + item.y)}
+					<Item 
+						x={item.x}
+						y={item.y}
+						type={item.type}
+						color={item.color}
+						size={item.size}
+					/>
 				{/each}
 			</div>
 
