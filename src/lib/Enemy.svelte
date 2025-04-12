@@ -3,7 +3,7 @@
     export let y;
   </script>
   
-  <div class="enemy" style="left: {x}px; top: {y}px;" />
+  <div class="enemy" style="left: {x}px; top: {y}px;"></div>
   
   <style>
     .enemy {
