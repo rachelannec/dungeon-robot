@@ -5,7 +5,7 @@
 	import Projectile from './lib/Projectile.svelte';
 	import Dungeon from './lib/Dungeon.svelte';
 	import HUD from './lib/HUD.svelte';
-	import { generateDungeon } from './dungeonGenerator';
+	import { generateDungeon } from './game/dungeonGenerator';
 	import { weapons } from './weapons';
 
 	let canvasWidth = 800;
@@ -45,6 +45,7 @@
 		gameState.rooms = generateDungeon(5);
 		gameState.player.x = gameState.rooms[0].center.x;
 		gameState.player.y = gameState.rooms[0].center.y;
+		spawnEnemies();
 
 		window.addEventListener('keydown', handleKeyDown);
 		window.addEventListener('keyup', handleKeyUp);
@@ -60,23 +61,80 @@
 		};
 	});
 
+	const minimap = {
+        width: 200,
+        height: 200,
+        padding: 15,
+        scale: 0.1,
+        playerSize: 6,
+        enemySize: 4,
+        playerColor: '#00FF00',
+        enemyColor: '#FF0000',
+        roomColor: 'rgba(80, 80, 80, 0.4)',
+        currentRoomColor: 'rgba(120, 120, 120, 0.6)',
+        borderColor: '#AAA',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)'
+    };
+
+    // Calculate minimap data for all rooms
+    function getMinimapData() {
+        if (!gameState.rooms.length) return {};
+        
+        // Find bounds of all rooms
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        gameState.rooms.forEach(room => {
+            minX = Math.min(minX, room.x);
+            minY = Math.min(minY, room.y);
+            maxX = Math.max(maxX, room.x + room.width);
+            maxY = Math.max(maxY, room.y + room.height);
+        });
+
+        // Calculate scale to fit all rooms in minimap
+        const roomWidth = maxX - minX;
+        const roomHeight = maxY - minY;
+        const scaleX = (minimap.width - minimap.padding * 2) / roomWidth;
+        const scaleY = (minimap.height - minimap.padding * 2) / roomHeight;
+        const scale = Math.min(scaleX, scaleY) * 0.9; // Slightly smaller to keep padding
+
+        // Calculate center offset
+        const centerX = minimap.width / 2;
+        const centerY = minimap.height / 2;
+        const centerRoomX = (gameState.rooms[gameState.currentRoom].x + gameState.rooms[gameState.currentRoom].width/2 - minX) * scale;
+        const centerRoomY = (gameState.rooms[gameState.currentRoom].y + gameState.rooms[gameState.currentRoom].height/2 - minY) * scale;
+        const offsetX = centerX - centerRoomX;
+        const offsetY = centerY - centerRoomY;
+
+        return {
+            rooms: gameState.rooms.map(room => ({
+                x: (room.x - minX) * scale + offsetX,
+                y: (room.y - minY) * scale + offsetY,
+                width: room.width * scale,
+                height: room.height * scale,
+                isCurrent: gameState.rooms.indexOf(room) === gameState.currentRoom
+            })),
+            player: {
+                x: (gameState.player.x - minX) * scale + offsetX,
+                y: (gameState.player.y - minY) * scale + offsetY
+            },
+            enemies: gameState.enemies.map(enemy => ({
+                x: (enemy.x - minX) * scale + offsetX,
+                y: (enemy.y - minY) * scale + offsetY
+            })),
+            scale
+        };
+    }
+
+
 	function handleKeyDown(e) {
 		keys[e.key] = true;
 
-		// Switch weapons using number keys 1–3
-		if (e.key === '1') {
-			gameState.player.weapon = weapons[0];
-		} else if (e.key === '2') {
-			gameState.player.weapon = weapons[1];
-		} else if (e.key === '3') {
-			gameState.player.weapon = weapons[2];
-		}
+		if (e.key === '1') gameState.player.weapon = weapons[0];
+		else if (e.key === '2') gameState.player.weapon = weapons[1];
+		else if (e.key === '3') gameState.player.weapon = weapons[2];
 	}
 
 	function handleKeyUp(e) {
 		keys[e.key] = false;
-
-		
 	}
 
 	function handleShoot(e) {
@@ -85,20 +143,14 @@
 		const rect = document.querySelector('#game-canvas').getBoundingClientRect();
 		const mouseX = e.clientX - rect.left;
 		const mouseY = e.clientY - rect.top;
-
 		const worldMouseX = mouseX + cameraOffset.x;
 		const worldMouseY = mouseY + cameraOffset.y;
-
 		const angle = Math.atan2(worldMouseY - gameState.player.y, worldMouseX - gameState.player.x);
 
-		gameState.player.direction = {
-			x: Math.cos(angle),
-			y: Math.sin(angle)
-		};
+		gameState.player.direction = { x: Math.cos(angle), y: Math.sin(angle) };
 
 		if (gameState.player.energy >= gameState.player.weapon.energyCost) {
 			gameState.player.energy -= gameState.player.weapon.energyCost;
-
 			gameState.projectiles.push({
 				x: gameState.player.x,
 				y: gameState.player.y,
@@ -114,6 +166,7 @@
 	function spawnEnemies() {
 		const room = gameState.rooms[gameState.currentRoom];
 		const count = 3 + Math.floor(Math.random() * 3);
+		gameState.enemies = [];
 
 		for (let i = 0; i < count; i++) {
 			const x = room.x + 50 + Math.random() * (room.width - 100);
@@ -131,20 +184,18 @@
 		}
 	}
 
-
 	function gameLoop(timestamp) {
 		const deltaTime = timestamp - lastTime;
 		lastTime = timestamp;
-
 		update(deltaTime);
 		render();
-
 		animationFrame = window.requestAnimationFrame(gameLoop);
 	}
 
 	function update(deltaTime) {
 		if (gameState.gameOver || !gameState.gameStarted) return;
 
+		// Player movement
 		const speed = 5;
 		if (keys['ArrowUp'] || keys['w']) gameState.player.y -= speed;
 		if (keys['ArrowDown'] || keys['s']) gameState.player.y += speed;
@@ -153,6 +204,7 @@
 
 		gameState.player.energy = Math.min(gameState.player.energy + 0.2, gameState.player.maxEnergy);
 
+		// Enemy updates
 		for (let i = gameState.enemies.length - 1; i >= 0; i--) {
 			const enemy = gameState.enemies[i];
 			const dx = gameState.player.x - enemy.x;
@@ -184,6 +236,7 @@
 			}
 		}
 
+		// Projectile updates
 		for (let i = gameState.projectiles.length - 1; i >= 0; i--) {
 			const proj = gameState.projectiles[i];
 			proj.x += proj.dx;
@@ -219,9 +272,7 @@
 						break;
 					}
 				}
-			}
-
-			if (proj.type === 'enemy') {
+			} else if (proj.type === 'enemy') {
 				const dx = proj.x - gameState.player.x;
 				const dy = proj.y - gameState.player.y;
 				const dist = Math.sqrt(dx * dx + dy * dy);
@@ -234,6 +285,7 @@
 			}
 		}
 
+		// Room transitions - FIXED ENEMY SPAWNING
 		const currentRoom = gameState.rooms[gameState.currentRoom];
 		if (
 			gameState.player.x < currentRoom.x ||
@@ -251,8 +303,8 @@
 					gameState.player.y <= room.y + room.height
 				) {
 					gameState.currentRoom = i;
-					gameState.enemies = [];
-					spawnEnemies();
+					gameState.projectiles = [];
+					spawnEnemies(); // THIS FIXES THE ENEMY SPAWNING
 					break;
 				}
 			}
@@ -262,16 +314,25 @@
 	function render() {}
 
 	function startGame() {
-		gameState.gameStarted = true;
-		gameState.gameOver = false;
-		gameState.score = 0;
-		gameState.player.health = gameState.player.maxHealth;
-		gameState.player.energy = gameState.player.maxEnergy;
-		gameState.currentRoom = 0;
-		gameState.enemies = [];
-		gameState.projectiles = [];
-		gameState.player.x = gameState.rooms[0].center.x;
-		gameState.player.y = gameState.rooms[0].center.y;
+		gameState = {
+			player: {
+				x: gameState.rooms[0].center.x,
+				y: gameState.rooms[0].center.y,
+				health: 100,
+				maxHealth: 100,
+				energy: 100,
+				maxEnergy: 100,
+				weapon: weapons[2],
+				direction: { x: 1, y: 0 }
+			},
+			enemies: [],
+			projectiles: [],
+			currentRoom: 0,
+			rooms: gameState.rooms,
+			score: 0,
+			gameOver: false,
+			gameStarted: true
+		};
 		spawnEnemies();
 	}
 </script>
@@ -320,6 +381,39 @@
 				score={gameState.score}
 				weapon={gameState.player.weapon}
 			/>
+			<div class="minimap-container">
+				<div class="minimap" 
+					 style="width: {minimap.width}px; 
+							height: {minimap.height}px;
+							background: {minimap.backgroundColor}">
+					{#each getMinimapData().rooms as room}
+						<div class="minimap-room {room.isCurrent ? 'current-room' : ''}"
+							 style="left: {room.x}px;
+									top: {room.y}px;
+									width: {room.width}px;
+									height: {room.height}px;">
+						</div>
+					{/each}
+					
+					<!-- Player indicator -->
+					<div class="minimap-player"
+						 style="left: {getMinimapData().player?.x || 0}px;
+								top: {getMinimapData().player?.y || 0}px;
+								width: {minimap.playerSize}px;
+								height: {minimap.playerSize}px;">
+					</div>
+					
+					<!-- Enemy indicators -->
+					{#each getMinimapData().enemies as enemy}
+						<div class="minimap-enemy"
+							 style="left: {enemy.x}px;
+									top: {enemy.y}px;
+									width: {minimap.enemySize}px;
+									height: {minimap.enemySize}px;">
+						</div>
+					{/each}
+				</div>
+			</div>
 		</div>
 	{/if}
 </div>
@@ -370,4 +464,47 @@
 		margin-top: 30px;
 		color: #aaa;
 	}
+
+
+	/* Minimap Styles */
+    .minimap-container {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        z-index: 10;
+        border: 2px solid #444;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    .minimap {
+        position: relative;
+    }
+    
+    .minimap-room {
+        position: absolute;
+        background:  rgba(0, 0, 0, 0.7);
+        border: 1px solid #aaa;
+    }
+    
+    .current-room {
+        background: rgba(0, 0, 0, 0.7);
+        border: 1px solid #FFF;
+    }
+    
+    .minimap-player {
+        position: absolute;
+        background: #00ff00;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 2;
+    }
+    
+    .minimap-enemy {
+        position: absolute;
+        background: #ff0000;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1;
+    }
 </style>
