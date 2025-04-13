@@ -6,6 +6,7 @@
   import Floor from '../sprites/floor.png';
 
   const TILE_SIZE = 32;
+  const WALL_SIZE =32; 
 
   // Seeded random generator to ensure consistent randomness per tile
   function seededRandom(x, y) {
@@ -58,7 +59,7 @@
 
     <!-- Top wall -->
     {#each Array.from({ length: Math.floor(room.width / TILE_SIZE) }) as _, index}
-      <img src="{Wall}" style="left: {index * TILE_SIZE}px; top: 0" class="wall" alt="Wall" />
+      <img src="{Wall}" style="left: {index * WALL_SIZE}px; top: 0" class="wall" alt="Wall" />
     {/each}
 
     

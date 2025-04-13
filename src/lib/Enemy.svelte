@@ -8,8 +8,8 @@
   <style>
     .enemy {
       position: absolute;
-      width: 25px;
-      height: 25px;
+      width: 18px;
+      height: 18px;
       background-color: #f44336;
       border-radius: 50%;
       z-index: 5;
