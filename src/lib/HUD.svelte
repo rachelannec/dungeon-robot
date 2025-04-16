@@ -5,9 +5,20 @@
   export let maxEnergy;
   export let score;
   export let weapon;
+  export let currentRoom;
+  export let totalRooms;
+  export let roomsCleared;
+  export let enemiesDefeated;
 </script>
 
 <div class="hud">
+
+  <div class="progress-stats">
+    <div>Room: {currentRoom}/{totalRooms}</div>
+    <div>Cleared: {roomsCleared}</div>
+    <div>Enemies: {enemiesDefeated}</div>
+  </div>
+
   <div class="health-bar">
     <div class="health-fill" style="width: {(health / maxHealth) * 100}%" />
     <span>HEALTH: {Math.floor(health)}/{maxHealth}</span>
@@ -25,6 +36,8 @@
   <div class="score">
     SCORE: {score}
   </div>
+
+  
 </div>
 
 <style>
@@ -76,5 +89,15 @@
     top: 10px;
     right: 10px;
     font-size: 1.2rem;
+  }
+
+  .progress-stats {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    color: white;
+    font-family: monospace;
+    text-align: right;
+    padding-bottom: 50px;
   }
 </style>
